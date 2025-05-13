@@ -21,6 +21,8 @@ import { HTTPError } from "lambert-server";
 import fetch from "node-fetch";
 import { Attachment } from "../entities";
 import { Config } from "./Config";
+import fs from "fs/promises";
+import path from "path";
 
 export async function uploadFile(
 	path: string,
@@ -53,23 +55,29 @@ export async function uploadFile(
 }
 
 export async function handleFile(
-	path: string,
-	body?: string,
+	savePath: string,
+	body?: string
 ): Promise<string | undefined> {
 	if (!body || !body.startsWith("data:")) return undefined;
-	try {
-		const mimetype = body.split(":")[1].split(";")[0];
-		const buffer = Buffer.from(body.split(",")[1], "base64");
 
-		const { id } = await uploadFile(path, {
-			buffer,
-			mimetype,
-			originalname: "banner",
-		});
-		return id;
-	} catch (error) {
-		console.error(error);
-		throw new HTTPError("Invalid " + path);
+	try {
+		const [header, base64] = body.split(",");
+		const match = header.match(/^data:(image\/[a-zA-Z]+);base64$/);
+		if (!match) throw new Error("Invalid MIME type");
+
+		const mime = match[1];
+		const ext = mime.split("/")[1]; // e.g., 'png', 'jpeg'
+		const buffer = Buffer.from(base64, "base64");
+
+		const fullPath = path.join("public", `${savePath}.${ext}`);
+		await fs.mkdir(path.dirname(fullPath), { recursive: true });
+		await fs.writeFile(fullPath, buffer);
+
+		// Return the path to store in the database or return to client
+		return `${savePath}.${ext}`;
+	} catch (err) {
+		console.error("handleFile error:", err);
+		throw new HTTPError("Invalid " + savePath);
 	}
 }
 
